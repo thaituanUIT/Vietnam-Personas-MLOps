@@ -14,7 +14,7 @@ def transform_to_warehouse(
 ) -> None:
     """Clean bronze rows, persist silver Parquet, and build a gold star schema."""
     silver = frame.copy()
-    for column in silver.select_dtypes(include="object").columns:
+    for column in silver.select_dtypes(include=["object", "string"]).columns:
         silver[column] = silver[column].map(
             lambda value: value.strip() if isinstance(value, str) else value
         )

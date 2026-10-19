@@ -12,6 +12,9 @@ dependencies = [
   "scikit-learn>=1.5,<2",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
 [project.scripts]
 persona-pipeline = "persona_mlops.cli:main"
 
@@ -25,3 +28,8 @@ target-version = "py310"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/persona_mlops"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

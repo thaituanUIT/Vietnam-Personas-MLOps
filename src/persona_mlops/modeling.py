@@ -61,7 +61,8 @@ def train(
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
     tracking_dir.mkdir(parents=True, exist_ok=True)
-    mlflow.set_tracking_uri(tracking_dir.resolve().as_uri())
+    tracking_database = tracking_dir / "mlflow.db"
+    mlflow.set_tracking_uri(f"sqlite:///{tracking_database.resolve()}")
     mlflow.set_experiment("vietnam-persona-classification-clustering")
     with mlflow.start_run() as run:
         mlflow.log_params({

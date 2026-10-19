@@ -32,8 +32,17 @@ Requires Python 3.10+ and `uv`.
 ```bash
 uv sync
 uv run persona-pipeline run --sample-size 5000 --clusters 8
-uv run mlflow ui --backend-store-uri ./mlruns
+uv run mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
 ```
+
+Install the development extra and run the offline test suite with:
+
+```bash
+uv sync --extra dev
+uv run pytest
+```
+
+Tests use generated fixtures and a temporary DuckDB/MLflow directory. They do not fetch the Hugging Face dataset.
 
 The `run` command streams a deterministic prefix of the dataset, writes bronze Parquet, validates and cleans it into silver, builds the gold warehouse, trains both algorithms, and writes local MLflow and prediction artifacts. Open MLflow at `http://127.0.0.1:5000`.
 
