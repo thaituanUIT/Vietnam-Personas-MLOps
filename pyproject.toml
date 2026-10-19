@@ -1,0 +1,27 @@
+[project]
+name = "vn-persona-mlops"
+version = "0.1.0"
+description = "A local-first data and MLOps pipeline for synthetic Vietnamese personas"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets>=3.0,<5",
+  "duckdb>=1.2,<2",
+  "mlflow>=3.0,<4",
+  "pandas>=2.2,<4",
+  "pyarrow>=17,<25",
+  "scikit-learn>=1.5,<2",
+]
+
+[project.scripts]
+persona-pipeline = "persona_mlops.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/persona_mlops"]
