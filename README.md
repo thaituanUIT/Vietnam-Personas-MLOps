@@ -1,5 +1,26 @@
 # Vietnamese Persona Data + MLOps
 
+This portfolio project focuses on Python ETL, SQL dimensional modeling, data contracts, repeatable snapshot loads, and automated checks. ML classification and clustering are downstream consumers of the warehouse.
+
+### Try the ETL offline
+
+```bash
+uv sync --extra dev
+uv run persona-pipeline demo --output-dir data/demo
+uv run pytest -q
+```
+
+The demo creates 120 invented records locally and produces a DuckDB warehouse and `data/demo/reports/audience_summary.csv`. Demo records are separate from the NVIDIA dataset and are only for demonstrating mechanics. They are not a model benchmark.
+
+For a real source sample, run ETL without model training:
+
+```bash
+uv run persona-pipeline etl --sample-size 5000
+uv run persona-pipeline report
+```
+
+See [the data model and design decisions](docs/data-model.md) and [the operations and interview guide](docs/operations.md).
+
 A local-first data engineering and ML project built around NVIDIA's synthetic [Nemotron-Personas-Vietnam](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Vietnam) dataset. It demonstrates ETL, a Parquet data lake, DuckDB warehouse modeling, classification, clustering, and local MLflow tracking without a cloud account or paid service.
 
 ## Architecture
@@ -16,6 +37,7 @@ Gold: data/warehouse.duckdb
   ├── dim_demographics
   ├── dim_occupation
   ├── fact_persona
+  ├── mart_audience_summary (SQL view)
   └── fact_model_predictions
         ↓ analytical feature/label query
 TF-IDF + LogisticRegression classifier and TF-IDF + MiniBatchKMeans clustering
@@ -54,7 +76,9 @@ uv run persona-pipeline transform
 uv run persona-pipeline train --clusters 8
 ```
 
-`train` expects that `transform` has already built the warehouse. Options `--data`, `--output-dir`, `--warehouse`, and `--tracking-dir` change local paths. Keep the sample size modest on a laptop; TF-IDF runs in memory.
+`train` reads directly from an existing warehouse; it does not require the bronze file. Options `--data`, `--output-dir`, `--warehouse`, and `--tracking-dir` change local paths. Bronze and warehouse defaults follow `--output-dir`. Keep the sample size modest on a laptop; TF-IDF runs in memory.
+
+Each command writes a JSON record under `<output-dir>/runs/`, including status, UTC timestamps, parameters, and errors. Commands that read or create bronze also record the row count and a SHA-256 fingerprint. Validation writes failure reports before raising an error. Gold SQL models live in `src/persona_mlops/sql/warehouse.sql` and run inside a DuckDB transaction. A successful snapshot reload invalidates previous model predictions; rerun `train` to generate predictions for that snapshot.
 
 ## Outputs
 
@@ -62,6 +86,9 @@ uv run persona-pipeline train --clusters 8
 - `data/silver/personas.parquet`: trimmed text and normalized age field
 - `data/warehouse.duckdb`: silver table and gold dimensions/facts
 - `data/reports/quality_report.json`: schema, null, duplicate-ID, and target checks
+- `data/reports/silver_quality_report.json`: validation after trimming and before warehouse load
+- `data/reports/audience_summary.csv`: counts and average ages by region, zone, occupation
+- `data/runs/*.json`: command audit records, including failed runs
 - `data/gold/scored_personas.parquet`: predicted region and cluster per persona
 - `data/gold/metrics.json`: classification and clustering metrics
 - `mlruns/`: local MLflow parameters, metrics, models, and reports

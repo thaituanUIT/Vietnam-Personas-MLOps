@@ -3,51 +3,87 @@
 import argparse
 import json
 import logging
+import hashlib
 from pathlib import Path
 
 import pandas as pd
 
 from persona_mlops.ingestion import ingest
-from persona_mlops.modeling import train
+from persona_mlops.audit import record_run
+from persona_mlops.demo import demo_frame
 from persona_mlops.quality import validate
-from persona_mlops.warehouse import load_training_data, transform_to_warehouse
+from persona_mlops.warehouse import export_report, load_training_data, transform_to_warehouse
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local Vietnamese persona ML pipeline")
-    parser.add_argument("command", choices=["run", "ingest", "transform", "train"])
+    parser.add_argument("command", choices=["run", "etl", "demo", "ingest", "transform", "train", "report"])
     parser.add_argument("--sample-size", type=int, default=5_000)
     parser.add_argument("--clusters", type=int, default=8)
-    parser.add_argument("--data", type=Path, default=Path("data/bronze/personas.parquet"))
+    parser.add_argument("--data", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=Path("data"))
-    parser.add_argument("--warehouse", type=Path, default=Path("data/warehouse.duckdb"))
+    parser.add_argument("--warehouse", type=Path, default=None)
     parser.add_argument("--tracking-dir", type=Path, default=Path("mlruns"))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    args.data = args.data or args.output_dir / "bronze/personas.parquet"
+    args.warehouse = args.warehouse or args.output_dir / "warehouse.duckdb"
 
-    if args.command in {"run", "ingest"}:
+    parameters = {k: v for k, v in vars(args).items() if k not in {"command", "output_dir"}}
+    with record_run(args.command, args.output_dir, **parameters) as record:
+        execute(args, record)
+
+
+def execute(args: argparse.Namespace, record: dict) -> None:
+    if args.command in {"train", "report"}:
+        if not args.warehouse.exists():
+            raise FileNotFoundError(f"Warehouse not found: {args.warehouse}; run transform first")
+        if args.command == "train":
+            train_models(args)
+        else:
+            export_report(args.warehouse, args.output_dir / "reports/audience_summary.csv")
+        return
+
+    if args.command == "demo":
+        frame = demo_frame()
+        args.data.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_parquet(args.data, index=False)
+        record["source"] = "invented offline demo; not NVIDIA data"
+    elif args.command in {"run", "etl", "ingest"}:
         frame = ingest(args.sample_size, args.data)
+        record["source"] = "nvidia/Nemotron-Personas-Vietnam; train prefix; remote default revision"
     else:
         if not args.data.exists():
-            parser.error(f"Input Parquet not found: {args.data}; run ingest first")
+            raise FileNotFoundError(f"Input Parquet not found: {args.data}; run ingest first")
         frame = pd.read_parquet(args.data)
+    with args.data.open("rb") as source_file:
+        digest = hashlib.sha256()
+        for block in iter(lambda: source_file.read(1024 * 1024), b""):
+            digest.update(block)
+    record.update(rows=len(frame), bronze_sha256=digest.hexdigest())
     if args.command == "ingest":
         return
 
     validate(frame, args.output_dir / "reports/quality_report.json")
-    if args.command in {"run", "transform"}:
+    if args.command in {"run", "etl", "demo", "transform"}:
         transform_to_warehouse(
             frame, args.output_dir / "silver/personas.parquet", args.warehouse
         )
-    if args.command in {"run", "train"}:
-        if not args.warehouse.exists():
-            parser.error(f"Warehouse not found: {args.warehouse}; run transform first")
-        model_frame = load_training_data(args.warehouse)
-        result = train(
-            model_frame, args.output_dir / "gold", args.tracking_dir,
-            args.warehouse, args.clusters,
-        )
-        print(json.dumps(result, indent=2))
+        report = export_report(args.warehouse, args.output_dir / "reports/audience_summary.csv")
+        record["report_groups"] = len(report)
+    if args.command == "run":
+        train_models(args)
+
+
+def train_models(args: argparse.Namespace) -> None:
+    from persona_mlops.modeling import train
+
+    model_frame = load_training_data(args.warehouse)
+    result = train(
+        model_frame, args.output_dir / "gold", args.tracking_dir,
+        args.warehouse, args.clusters,
+    )
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
